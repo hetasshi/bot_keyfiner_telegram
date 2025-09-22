@@ -63,6 +63,10 @@ async def handle_audio(message: Message) -> None:
         await message.answer(messages.unsupported_file())
         return
 
+    if media.extension not in files.SUPPORTED_EXTENSIONS:
+        await message.answer(messages.unsupported_file())
+        return
+
     limit_bytes = _config.max_file_mb * 1024 * 1024
     if media.size and media.size > limit_bytes:
         await message.answer(messages.file_too_large(_config.max_file_mb))
@@ -105,8 +109,6 @@ def _extract_media_meta(message: Message) -> Optional[MediaMeta]:
     if message.audio:
         audio = message.audio
         ext = files.resolve_extension(audio.file_name, audio.mime_type)
-        if not ext:
-            return None
         display = files.pick_filename(audio.file_name, ext)
         return MediaMeta(
             file_id=audio.file_id,
@@ -118,7 +120,7 @@ def _extract_media_meta(message: Message) -> Optional[MediaMeta]:
 
     if message.voice:
         voice = message.voice
-        ext = files.resolve_extension(None, voice.mime_type) or ".ogg"
+        ext = files.resolve_extension(None, voice.mime_type)
         display = files.pick_filename("voice_message.ogg", ext)
         return MediaMeta(
             file_id=voice.file_id,
@@ -131,8 +133,6 @@ def _extract_media_meta(message: Message) -> Optional[MediaMeta]:
     if message.document:
         document = message.document
         ext = files.resolve_extension(document.file_name, document.mime_type)
-        if not ext:
-            return None
         display = files.pick_filename(document.file_name, ext)
         return MediaMeta(
             file_id=document.file_id,

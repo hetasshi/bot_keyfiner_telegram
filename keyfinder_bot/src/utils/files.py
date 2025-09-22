@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 _TEMP_DIR = Path(tempfile.gettempdir()) / "keyfinder-bot"
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".opus"}
+DEFAULT_EXTENSION = ".bin"
 MIME_EXTENSION_MAP = {
     "audio/mpeg": ".mp3",
     "audio/mp3": ".mp3",
@@ -76,17 +77,17 @@ def extract_extension(filename: Optional[str]) -> Optional[str]:
     return suffix or None
 
 
-def resolve_extension(filename: Optional[str], mime_type: Optional[str]) -> Optional[str]:
+def resolve_extension(filename: Optional[str], mime_type: Optional[str]) -> str:
     ext = extract_extension(filename)
     if ext and ext in SUPPORTED_EXTENSIONS:
         return ext
     if mime_type:
         mime_ext = MIME_EXTENSION_MAP.get(mime_type.lower())
-        if mime_ext in SUPPORTED_EXTENSIONS:
+        if mime_ext:
             return mime_ext
-    if ext in SUPPORTED_EXTENSIONS:
+    if ext:
         return ext
-    return None
+    return DEFAULT_EXTENSION
 
 
 def is_supported(filename: Optional[str], mime_type: Optional[str]) -> bool:
