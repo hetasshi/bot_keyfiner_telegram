@@ -1,0 +1,33 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment and config files
+.env
+.env.*
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Project specific
+.temp/
+logs/
+
+# Tests temporary output
+tests/tmp/
+tests/**/*.wav
