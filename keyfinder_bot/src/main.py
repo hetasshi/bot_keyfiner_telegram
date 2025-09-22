@@ -10,7 +10,7 @@ from aiogram.enums import ParseMode
 
 from .config import Settings, load_settings
 from .bot.handlers import setup_handlers
-from .utils.files import ensure_temp_dir
+from .utils.files import configure_temp_dir
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def _run_bot(settings: Settings) -> None:
     """Start polling loop with the provided settings."""
-    ensure_temp_dir()
+    configure_temp_dir(settings.temp_dir)
 
     bot = Bot(
         token=settings.bot_token,

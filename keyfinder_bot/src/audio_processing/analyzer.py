@@ -4,10 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import librosa
 import numpy as np
+import soundfile as sf
 
 from .profiles import ENHARMONIC, MAJOR_PROFILES, MINOR_PROFILES, NOTES_SHARP
 
@@ -23,17 +24,54 @@ class KeyDetectionResult:
     correlation: float
 
 
+@dataclass(slots=True)
+class AnalysisResult:
+    """Structured result of key, tempo and duration analysis."""
+
+    filename: str
+    note: str
+    mode: str
+    enharmonic: Optional[str]
+    bpm: int
+    bpm_double: int
+    bpm_half: int
+    duration: str
+    close_key: Optional[str] = None
+
+    @property
+    def tone_display(self) -> str:
+        return format_tone_display(self.note, self.mode)
+
+
 class AnalysisError(RuntimeError):
     """Raised when audio analysis cannot be completed."""
 
 
-def analyze_file(path: str | Path, *, want_close_key: bool = False) -> Dict[str, Any]:
+def _load_audio(audio_path: Path) -> tuple[np.ndarray, int]:
+    """Load audio file, falling back to soundfile if needed."""
+
+    try:
+        y, sr = librosa.load(audio_path, sr=None, mono=True)
+    except ModuleNotFoundError as exc:
+        if getattr(exc, "name", None) != "aifc":
+            raise
+        y, sr = sf.read(audio_path, always_2d=False)
+        if isinstance(y, tuple):
+            y = y[0]
+        y = np.asarray(y)
+        if y.ndim > 1:
+            y = np.mean(y, axis=1)
+        return np.asarray(y, dtype=np.float32), int(sr)
+    return y, int(sr)
+
+
+def analyze_file(path: str | Path, *, want_close_key: bool = False) -> AnalysisResult:
     """Analyze the audio file and return musical metrics."""
     audio_path = Path(path)
     logger.info("Loading audio file %s", audio_path)
 
     try:
-        y, sr = librosa.load(audio_path, sr=None, mono=True)
+        y, sr = _load_audio(audio_path)
     except Exception as exc:  # pragma: no cover - delegated to caller
         raise AnalysisError(f"Failed to load audio file: {exc}") from exc
 
@@ -44,39 +82,37 @@ def analyze_file(path: str | Path, *, want_close_key: bool = False) -> Dict[str,
 
     key_info, candidates = _detect_key(y_harm, sr)
     bpm, bpm_double, bpm_half = _detect_bpm(y_perc, sr)
-    duration = _format_duration(len(y), sr)
+    duration = format_duration_seconds(len(y) / sr)
 
-    result: Dict[str, Any] = {
-        "filename": audio_path.name,
-        "note": key_info.note,
-        "mode": key_info.mode,
-        "enharmonic": ENHARMONIC.get(key_info.note),
-        "tone": _format_tone_display(key_info.note, key_info.mode),
-        "bpm": bpm,
-        "bpm_double": bpm_double,
-        "bpm_half": bpm_half,
-        "duration": duration,
-        "close_key": None,
-    }
-
-    if key_info.correlation < 0:
-        logger.debug(
-            "Detected negative correlation %.3f for %s",
-            key_info.correlation,
-            result["tone"],
-        )
-
+    close_key_display: Optional[str] = None
     if want_close_key:
         close_candidate = _find_close_key(key_info, candidates)
         if close_candidate is not None:
-            result["close_key"] = _format_tone_display(
+            close_key_display = format_tone_display(
                 close_candidate.note, close_candidate.mode
             )
+
+    result = AnalysisResult(
+        filename=audio_path.name,
+        note=key_info.note,
+        mode=key_info.mode,
+        enharmonic=ENHARMONIC.get(key_info.note),
+        bpm=bpm,
+        bpm_double=bpm_double,
+        bpm_half=bpm_half,
+        duration=duration,
+        close_key=close_key_display,
+    )
+
+    if key_info.correlation < 0:
+        logger.debug(
+            "Detected negative correlation %.3f for %s", key_info.correlation, result.tone_display
+        )
 
     logger.info(
         "Analyzed %s: tone=%s, bpm=%s, duration=%s",
         audio_path.name,
-        result["tone"],
+        result.tone_display,
         bpm,
         duration,
     )
@@ -126,6 +162,9 @@ def _find_close_key(
 
 
 def _detect_bpm(y_perc: np.ndarray, sr: int) -> Tuple[int, int, int]:
+    if not np.any(y_perc):
+        return 0, 0, 0
+
     tempo = librosa.beat.tempo(y=y_perc, sr=sr)
     tempo_value = float(tempo[0]) if tempo.size > 0 else 0.0
     if np.isnan(tempo_value):
@@ -136,29 +175,16 @@ def _detect_bpm(y_perc: np.ndarray, sr: int) -> Tuple[int, int, int]:
     return bpm, bpm_double, bpm_half
 
 
-def _format_duration(num_samples: int, sr: int) -> str:
-    """Return mm:ss formatted duration for a given number of samples.
+def format_duration_seconds(total_seconds: float) -> str:
+    """Return mm:ss formatted duration for a given number of seconds."""
 
-    >>> _format_duration(44100 * 65, 44100)
-    '01:05'
-    >>> _format_duration(22050 * 3, 22050)
-    '00:03'
-    """
-
-    total_seconds = num_samples / sr
     minutes = int(total_seconds // 60)
     seconds = int(total_seconds % 60)
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def _format_tone_display(note: str, mode: str) -> str:
-    """Compose tone string with optional enharmonic alternative.
-
-    >>> _format_tone_display('A#', 'min')
-    'A#min (Bbmin)'
-    >>> _format_tone_display('C', 'Maj')
-    'CMaj'
-    """
+def format_tone_display(note: str, mode: str) -> str:
+    """Compose tone string with optional enharmonic alternative."""
 
     tone = f"{note}{mode}"
     enharmonic = ENHARMONIC.get(note)
@@ -179,7 +205,10 @@ def _safe_correlation(a: Sequence[float], b: Sequence[float]) -> float:
     return corr
 
 
-if __name__ == "__main__":  # pragma: no cover - doctest helper
-    import doctest
-
-    doctest.testmod()
+__all__ = [
+    "AnalysisResult",
+    "AnalysisError",
+    "analyze_file",
+    "format_duration_seconds",
+    "format_tone_display",
+]

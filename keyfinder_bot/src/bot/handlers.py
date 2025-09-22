@@ -6,13 +6,12 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from aiogram import F, Router
+from aiogram import F, Dispatcher, Router
 from aiogram.filters import CommandStart
 from aiogram.types import ContentType, Message
 from aiogram.utils.chat_action import ChatActionSender
-from aiogram import Dispatcher
 
-from ..audio_processing import analyzer
+from ..audio_processing import AnalysisResult, analyze_file
 from ..audio_processing.analyzer import AnalysisError
 from ..config import Settings
 from ..utils import files
@@ -49,7 +48,9 @@ def setup_handlers(dp: Dispatcher, settings: Settings) -> None:
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer(messages.START_MESSAGE)
+    if _config is None:
+        raise RuntimeError("Handlers are not configured. Call setup_handlers first.")
+    await message.answer(messages.start_message(_config.max_file_mb))
 
 
 @router.message(F.content_type.in_({ContentType.AUDIO, ContentType.VOICE, ContentType.DOCUMENT}))
@@ -81,12 +82,12 @@ async def handle_audio(message: Message) -> None:
 
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             async with _semaphore:
-                analysis = await asyncio.to_thread(
-                    analyzer.analyze_file,
+                analysis: AnalysisResult = await asyncio.to_thread(
+                    analyze_file,
                     temp_path,
                     want_close_key=_config.show_close_key,
                 )
-        analysis["filename"] = media.display_name
+        analysis.filename = media.display_name
 
         await message.answer(messages.format_analysis_result(analysis))
 

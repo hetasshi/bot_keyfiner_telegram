@@ -1,4 +1,4 @@
 """Audio analysis helpers."""
-from .analyzer import analyze_file
+from .analyzer import AnalysisResult, AnalysisError, analyze_file
 
-__all__ = ["analyze_file"]
+__all__ = ["analyze_file", "AnalysisResult", "AnalysisError"]

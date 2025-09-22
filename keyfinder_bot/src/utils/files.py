@@ -10,7 +10,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TEMP_DIR = Path(tempfile.gettempdir()) / "keyfinder-bot"
+_TEMP_DIR = Path(tempfile.gettempdir()) / "keyfinder-bot"
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".opus"}
 MIME_EXTENSION_MAP = {
     "audio/mpeg": ".mp3",
@@ -28,10 +28,25 @@ MIME_EXTENSION_MAP = {
 }
 
 
+def configure_temp_dir(path: Path | str) -> Path:
+    """Configure the temporary directory used by the bot."""
+    global _TEMP_DIR
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    _TEMP_DIR = candidate
+    return ensure_temp_dir()
+
+
 def ensure_temp_dir() -> Path:
     """Ensure that the temporary directory exists and return it."""
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    return TEMP_DIR
+    _TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    return _TEMP_DIR
+
+
+def get_temp_dir() -> Path:
+    """Return the currently configured temporary directory."""
+    return ensure_temp_dir()
 
 
 def unique_stem() -> str:
@@ -43,7 +58,7 @@ def safe_join_temp(ext: str) -> Path:
     """Return a unique path inside the temporary directory with the given extension."""
     ensure_temp_dir()
     clean_ext = ext if ext.startswith(".") else f".{ext}"
-    return TEMP_DIR / f"{unique_stem()}{clean_ext.lower()}"
+    return _TEMP_DIR / f"{unique_stem()}{clean_ext.lower()}"
 
 
 def remove_silent(path: Path | str) -> None:
@@ -89,7 +104,9 @@ def pick_filename(original_name: Optional[str], default_ext: str) -> str:
 
 
 __all__ = [
+    "configure_temp_dir",
     "ensure_temp_dir",
+    "get_temp_dir",
     "unique_stem",
     "safe_join_temp",
     "remove_silent",
