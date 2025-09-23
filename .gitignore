@@ -11,6 +11,7 @@ ENV/
 # Environment and config files
 .env
 .env.*
+!.env.example
 
 # Tooling caches
 .pytest_cache/

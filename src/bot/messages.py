@@ -40,7 +40,24 @@ def format_analysis_result(result: "AnalysisResult") -> str:
     """Format analysis result into a user-friendly text message."""
 
     lines = [f"Тональность бита: {result.filename}"]
-    lines.append(f"Тон: {result.tone_display}")
+    if not result.note or result.note == "0":
+        lines.append("Тон: не определён")
+    else:
+        tone_line = f"Тон: {result.tone_display}"
+        frequency = result.tone_frequency_hz
+        extra_parts: list[str] = []
+        if frequency:
+            tone_line += f" • {frequency:.2f} Гц"
+            a4 = result.tuning_reference_hz
+            if a4:
+                extra_parts.append(f"A4={a4:.2f} Гц")
+        if result.key_confidence is not None:
+            extra_parts.append(
+                f"уверенность {int(round(result.key_confidence * 100))}%"
+            )
+        if extra_parts:
+            tone_line += " (" + ", ".join(extra_parts) + ")"
+        lines.append(tone_line)
     lines.append(
         "Темп: {bpm} BPM ({double} / {half})".format(
             bpm=result.bpm,
@@ -50,7 +67,7 @@ def format_analysis_result(result: "AnalysisResult") -> str:
     )
     lines.append(f"Длительность: {result.duration}")
 
-    if result.close_key:
+    if result.close_key and result.note and result.note != "0":
         lines.append(f"Близкий вариант: {result.close_key}")
 
     return "\n".join(lines)
