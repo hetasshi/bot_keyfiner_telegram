@@ -40,7 +40,7 @@ def format_analysis_result(result: "AnalysisResult") -> str:
     """Format analysis result into a user-friendly text message."""
 
     lines = [f"Тональность бита: {result.filename}"]
-    lines.append(f"Тон: {result.tone_display}")
+    lines.append(f"Тон: {result.tone_display}; {result.tuning_display}")
     lines.append(
         "Темп: {bpm} BPM ({double} / {half})".format(
             bpm=result.bpm,

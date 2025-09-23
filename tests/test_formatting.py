@@ -22,6 +22,7 @@ def test_message_template() -> None:
         note="A#",
         mode="min",
         enharmonic="Bb",
+        tuning_hz=440.0,
         bpm=140,
         bpm_double=280,
         bpm_half=70,
@@ -34,7 +35,7 @@ def test_message_template() -> None:
 
     assert len(lines) == 4
     assert lines[0] == "Тональность бита: track.mp3"
-    assert lines[1] == "Тон: A#min (Bbmin)"
+    assert lines[1] == "Тон: A#min (Bbmin); A4 ≈ 440.00 Гц"
     assert lines[2] == "Темп: 140 BPM (280 / 70)"
     assert lines[3] == "Длительность: 03:25"
 
@@ -45,6 +46,7 @@ def test_message_template_with_close_key() -> None:
         note="C",
         mode="Maj",
         enharmonic=None,
+        tuning_hz=432.5,
         bpm=128,
         bpm_double=256,
         bpm_half=64,
@@ -57,7 +59,7 @@ def test_message_template_with_close_key() -> None:
 
     assert len(lines) == 5
     assert lines[0] == "Тональность бита: beat.wav"
-    assert lines[1] == "Тон: CMaj"
+    assert lines[1] == "Тон: CMaj; A4 ≈ 432.50 Гц"
     assert lines[2] == "Темп: 128 BPM (256 / 64)"
     assert lines[3] == "Длительность: 02:30"
     assert lines[4] == "Близкий вариант: G#Maj (AbMaj)"
