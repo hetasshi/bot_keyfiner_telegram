@@ -2,7 +2,12 @@ import numpy as np
 import soundfile as sf
 import librosa
 
-from src.audio_processing.analyzer import analyze_file, _detect_bpm
+from src.audio_processing.analyzer import (
+    KeyDetectionResult,
+    _find_close_key,
+    _detect_bpm,
+    analyze_file,
+)
 
 SR = 44100
 
@@ -50,9 +55,21 @@ def test_silence_low_confidence(tmp_path) -> None:
 
     result = analyze_file(path)
 
-    assert result.note != "0"
+    assert result.note == "0"
+    assert result.mode == ""
     assert result.key_confidence == 0.0
-    assert result.tone_frequency_hz > 0
+    assert result.tone_frequency_hz == 0.0
+
+
+def test_percussive_click_has_no_key(tmp_path) -> None:
+    click_track = _click_track(120, duration=4.0)
+    path = _write_audio(tmp_path, "click", click_track)
+
+    result = analyze_file(path)
+
+    assert result.note == "0"
+    assert result.mode == ""
+    assert result.tone_frequency_hz == 0.0
 
 
 def test_detect_major_key(tmp_path) -> None:
@@ -143,8 +160,20 @@ def _tempo_stub(responses):
     return fake_tempo, state
 
 
+def _candidate(note: str, mode: str, score: float, confidence: float) -> KeyDetectionResult:
+    return KeyDetectionResult(
+        note=note,
+        mode=mode,
+        correlation=score,
+        score=score,
+        positive_support=0.5,
+        dominant_share=0.4,
+        confidence=confidence,
+    )
+
+
 def test_bpm_double_correction(monkeypatch) -> None:
-    responses = [[170.0], [170.0, 170.0, 85.0, 85.0]]
+    responses = [[170.0] * 100 + [85.0] * 90]
     fake_tempo, state = _tempo_stub(responses)
     monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
 
@@ -154,11 +183,11 @@ def test_bpm_double_correction(monkeypatch) -> None:
     assert bpm == 85
     assert bpm_double == 170
     assert bpm_half in {42, 43}
-    assert state["count"] == len(responses)
+    assert state["count"] == 1
 
 
 def test_bpm_low_correction(monkeypatch) -> None:
-    responses = [[50.0], [50.0, 100.0, 100.0]]
+    responses = [[50.0] * 30 + [100.0] * 5]
     fake_tempo, state = _tempo_stub(responses)
     monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
 
@@ -168,11 +197,11 @@ def test_bpm_low_correction(monkeypatch) -> None:
     assert bpm == 100
     assert bpm_double == 200
     assert bpm_half == 50
-    assert state["count"] == len(responses)
+    assert state["count"] == 1
 
 
 def test_bpm_harmonic_fallback(monkeypatch) -> None:
-    responses = [[120.0], [120.0, 120.0, 60.0]]
+    responses = [[120.0] * 40 + [60.0] * 36]
     fake_tempo, state = _tempo_stub(responses)
     monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
 
@@ -183,4 +212,26 @@ def test_bpm_harmonic_fallback(monkeypatch) -> None:
     assert bpm == 120
     assert bpm_double == 240
     assert bpm_half == 60
-    assert state["count"] == len(responses)
+    assert state["count"] == 1
+
+
+def test_find_close_key_returns_candidate() -> None:
+    best = _candidate("C", "Maj", score=0.82, confidence=0.36)
+    second = _candidate("G", "Maj", score=0.75, confidence=0.25)
+    close = _find_close_key(best, [best, second])
+
+    assert close is second
+
+
+def test_find_close_key_rejects_low_confidence() -> None:
+    best = _candidate("D", "min", score=0.78, confidence=0.21)
+    second = _candidate("A", "min", score=0.72, confidence=0.28)
+
+    assert _find_close_key(best, [best, second]) is None
+
+
+def test_find_close_key_requires_second_confidence() -> None:
+    best = _candidate("F", "Maj", score=0.81, confidence=0.34)
+    second = _candidate("C", "Maj", score=0.74, confidence=0.18)
+
+    assert _find_close_key(best, [best, second]) is None

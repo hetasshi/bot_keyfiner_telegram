@@ -1,6 +1,7 @@
 """Text messages and formatting helpers for the bot."""
 from __future__ import annotations
 
+import html
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -39,7 +40,7 @@ def processing_error() -> str:
 def format_analysis_result(result: "AnalysisResult") -> str:
     """Format analysis result into a user-friendly text message."""
 
-    lines = [f"Тональность бита: {result.filename}"]
+    lines = [f"Тональность бита: {html.escape(result.filename)}"]
     if not result.note or result.note == "0":
         lines.append("Тон: не определён")
     else:
