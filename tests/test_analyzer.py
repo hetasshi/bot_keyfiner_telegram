@@ -2,7 +2,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 
-from src.audio_processing.analyzer import analyze_file
+from src.audio_processing.analyzer import analyze_file, _detect_bpm
 
 SR = 44100
 
@@ -13,9 +13,9 @@ def _write_audio(tmp_path, name: str, data: np.ndarray, sr: int = SR) -> str:
     return str(path)
 
 
-def _sine_wave(note: str, duration: float) -> np.ndarray:
+def _sine_wave(note: str, duration: float, *, detune: float = 0.0) -> np.ndarray:
     t = np.linspace(0, duration, int(SR * duration), endpoint=False)
-    freq = librosa.note_to_hz(note)
+    freq = librosa.note_to_hz(note) * (2 ** (detune / 12))
     return np.sin(2 * np.pi * freq * t)
 
 
@@ -37,7 +37,22 @@ def test_detect_minor_key(tmp_path) -> None:
     result = analyze_file(path)
 
     assert result.mode == "min"
-    assert result.note in {"A", "G#"}  # допускаем редкую энгармонику
+    assert result.note == "A"
+    assert result.key_confidence > 0.7
+    expected_freq = librosa.note_to_hz("A4")
+    assert abs(result.tone_frequency_hz - expected_freq) < 2.0
+    assert abs(result.tuning_reference_hz - 440.0) < 2.0
+
+
+def test_silence_low_confidence(tmp_path) -> None:
+    silence = np.zeros(int(SR * 1.0), dtype=np.float32)
+    path = _write_audio(tmp_path, "silent", silence)
+
+    result = analyze_file(path)
+
+    assert result.note != "0"
+    assert result.key_confidence == 0.0
+    assert result.tone_frequency_hz > 0
 
 
 def test_detect_major_key(tmp_path) -> None:
@@ -54,6 +69,30 @@ def test_detect_major_key(tmp_path) -> None:
 
     assert result.mode == "Maj"
     assert result.note == "C"
+    assert result.key_confidence > 0.55
+    expected_freq = librosa.note_to_hz("C4")
+    assert abs(result.tone_frequency_hz - expected_freq) < 1.0
+    assert abs(result.tuning_reference_hz - 440.0) < 2.0
+
+
+def test_key_with_detuning(tmp_path) -> None:
+    detune = -0.2  # semitones
+    chord = sum(
+        _sine_wave(note, 3.0, detune=detune)
+        for note in ("E3", "E4", "G#3", "B3")
+    )
+    path = _write_audio(tmp_path, "detuned_e", _normalize(chord))
+
+    result = analyze_file(path)
+
+    assert result.note == "E"
+    assert result.mode == "Maj"
+    assert result.key_confidence > 0.4
+    expected_detune_factor = 2 ** (detune / 12)
+    expected_tuning = 440.0 * expected_detune_factor
+    assert abs(result.tuning_reference_hz - expected_tuning) < 2.0
+    expected_freq = librosa.note_to_hz("E4") * expected_detune_factor
+    assert abs(result.tone_frequency_hz - expected_freq) < 2.0
 
 
 def _click_track(bpm: float, duration: float) -> np.ndarray:
@@ -88,3 +127,60 @@ def test_bpm_not_found(tmp_path) -> None:
     assert result.bpm == 0
     assert result.bpm_double == 0
     assert result.bpm_half == 0
+
+
+def _tempo_stub(responses):
+    arrays = [np.asarray(response, dtype=float) for response in responses]
+    state = {"count": 0}
+
+    def fake_tempo(*args, **kwargs):
+        idx = state["count"]
+        if idx >= len(arrays):
+            raise AssertionError("Unexpected librosa.beat.tempo call")
+        state["count"] += 1
+        return arrays[idx]
+
+    return fake_tempo, state
+
+
+def test_bpm_double_correction(monkeypatch) -> None:
+    responses = [[170.0], [170.0, 170.0, 85.0, 85.0]]
+    fake_tempo, state = _tempo_stub(responses)
+    monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
+
+    y_perc = np.ones(4096, dtype=np.float32)
+    bpm, bpm_double, bpm_half = _detect_bpm(y_perc, SR)
+
+    assert bpm == 85
+    assert bpm_double == 170
+    assert bpm_half in {42, 43}
+    assert state["count"] == len(responses)
+
+
+def test_bpm_low_correction(monkeypatch) -> None:
+    responses = [[50.0], [50.0, 100.0, 100.0]]
+    fake_tempo, state = _tempo_stub(responses)
+    monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
+
+    y_perc = np.ones(4096, dtype=np.float32)
+    bpm, bpm_double, bpm_half = _detect_bpm(y_perc, SR)
+
+    assert bpm == 100
+    assert bpm_double == 200
+    assert bpm_half == 50
+    assert state["count"] == len(responses)
+
+
+def test_bpm_harmonic_fallback(monkeypatch) -> None:
+    responses = [[120.0], [120.0, 120.0, 60.0]]
+    fake_tempo, state = _tempo_stub(responses)
+    monkeypatch.setattr(librosa.beat, "tempo", fake_tempo)
+
+    y_perc = np.zeros(4096, dtype=np.float32)
+    harmonic = _sine_wave("A4", 2.0)
+    bpm, bpm_double, bpm_half = _detect_bpm(y_perc, SR, y_harm=harmonic, y_original=None)
+
+    assert bpm == 120
+    assert bpm_double == 240
+    assert bpm_half == 60
+    assert state["count"] == len(responses)
