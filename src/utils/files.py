@@ -21,7 +21,7 @@ MIME_EXTENSION_MAP = {
     "audio/vnd.wave": ".wav",
     "audio/ogg": ".ogg",
     "audio/opus": ".opus",
-    "audio/webm": ".ogg",
+    "audio/webm": ".webm",
     "audio/mp4": ".m4a",
     "audio/aac": ".m4a",
     "audio/x-m4a": ".m4a",

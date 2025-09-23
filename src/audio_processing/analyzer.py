@@ -18,8 +18,13 @@ from .profiles import ENHARMONIC, MAJOR_PROFILES, MINOR_PROFILES, NOTES_SHARP
 logger = logging.getLogger(__name__)
 
 CLOSE_KEY_THRESHOLD = 0.12
+CLOSE_KEY_MIN_CONF = 0.30
+CLOSE_KEY_ALT_MIN_CONF = 0.20
 POSITIVE_CORRELATION_THRESHOLD = 0.6
 HARMONIC_HOP_LENGTH = 512
+HARMONIC_RMS_VOID = 1e-5
+CONF_VOID = 0.05
+CONF_WEAK = 0.15
 
 
 def _env_float(name: str, default: float) -> float:
@@ -44,8 +49,8 @@ def _env_int(name: str, default: int) -> int:
 
 BPM_MIN = _env_int("BPM_MIN", 60)
 BPM_MAX = _env_int("BPM_MAX", 180)
-BPM_DOUBLE_SWITCH = _env_int("BPM_DOUBLE_SWITCH", 160)
-BPM_HALF_SWITCH = _env_int("BPM_HALF_SWITCH", 70)
+BPM_DOUBLE_SWITCH = _env_int("BPM_DOUBLE_SWITCH", 165)
+BPM_HALF_SWITCH = _env_int("BPM_HALF_SWITCH", 65)
 BPM_CANDIDATE_TOLERANCE = _env_float("BPM_CANDIDATE_TOLERANCE", 1.5)
 BPM_SUPPORT_RATIO = _env_float("BPM_SUPPORT_RATIO", 0.9)
 
@@ -165,16 +170,30 @@ def analyze_file(path: str | Path, *, want_close_key: bool = False) -> AnalysisR
 
     key_info, candidates, tuning_offset = _detect_key(y_harm, sr)
 
+    rms_vec = librosa.feature.rms(
+        y=y_harm, hop_length=HARMONIC_HOP_LENGTH
+    ).flatten()
+    harm_rms = float(np.mean(rms_vec)) if rms_vec.size else 0.0
+
+    no_key = (harm_rms < HARMONIC_RMS_VOID) or (
+        key_info.confidence < CONF_VOID
+    )
+    if no_key:
+        note, mode, enharmonic = "0", "", None
+    else:
+        note, mode = key_info.note, key_info.mode
+        enharmonic = ENHARMONIC.get(key_info.note)
+
     bpm, bpm_double, bpm_half = _detect_bpm(
         y_perc, sr, y_harm=y_harm, y_original=y
     )
     duration = format_duration_seconds(len(y) / sr)
 
     tuning_reference_hz = _tuning_reference_hz(tuning_offset)
-    tone_frequency_hz = _tone_frequency_hz(key_info.note, tuning_offset)
+    tone_frequency_hz = _tone_frequency_hz(note, tuning_offset)
 
     close_key_display: Optional[str] = None
-    if want_close_key:
+    if want_close_key and not no_key:
         close_candidate = _find_close_key(key_info, candidates)
         if close_candidate is not None:
             close_key_display = format_tone_display(
@@ -183,9 +202,9 @@ def analyze_file(path: str | Path, *, want_close_key: bool = False) -> AnalysisR
 
     result = AnalysisResult(
         filename=audio_path.name,
-        note=key_info.note,
-        mode=key_info.mode,
-        enharmonic=ENHARMONIC.get(key_info.note),
+        note=note,
+        mode=mode,
+        enharmonic=enharmonic,
         tone_frequency_hz=tone_frequency_hz,
         tuning_reference_hz=tuning_reference_hz,
         key_confidence=key_info.confidence,
@@ -332,6 +351,14 @@ def _detect_key(
         )
 
     candidates.sort(key=lambda item: item.score, reverse=True)
+    top = candidates[:3]
+    logger.debug(
+        "Key candidates: %s",
+        ", ".join(
+            f"{c.note}{c.mode}: corr={c.correlation:.3f}, score={c.score:.3f}, conf={c.confidence:.2f}"
+            for c in top
+        ),
+    )
     best = candidates[0]
 
     return best, candidates, tuning
@@ -353,7 +380,11 @@ def _find_close_key(
         second.note,
         second.mode,
     )
-    if delta < CLOSE_KEY_THRESHOLD and second.confidence >= 0.15:
+    if (
+        best.confidence >= CLOSE_KEY_MIN_CONF
+        and delta < CLOSE_KEY_THRESHOLD
+        and second.confidence >= CLOSE_KEY_ALT_MIN_CONF
+    ):
         return second
     return None
 
@@ -458,15 +489,28 @@ def _estimate_bpm_from_signal(
     if y_signal is None or not np.any(y_signal):
         return 0
 
-    tempo = librosa.beat.tempo(y=y_signal, sr=sr)
-    tempo_value = float(tempo[0]) if tempo.size > 0 else 0.0
-    if np.isnan(tempo_value) or tempo_value <= 0:
-        return 0
-
-    bpm_raw = int(round(tempo_value))
     candidates = librosa.beat.tempo(y=y_signal, sr=sr, aggregate=None)
     candidates_array = np.asarray(candidates, dtype=float)
-    bpm = _adjust_bpm(bpm_raw, candidates_array)
+    if candidates_array.size == 0:
+        return 0
+
+    finite_candidates = candidates_array[np.isfinite(candidates_array)]
+    if finite_candidates.size == 0:
+        return 0
+
+    positive_candidates = finite_candidates[finite_candidates > 0]
+    if positive_candidates.size == 0:
+        return 0
+
+    median_value = float(np.median(positive_candidates))
+    if math.isnan(median_value) or median_value <= 0:
+        return 0
+
+    bpm_raw = int(round(median_value))
+    if bpm_raw <= 0:
+        return 0
+
+    bpm = _adjust_bpm(bpm_raw, positive_candidates)
     if bpm != bpm_raw:
         logger.debug("Adjusted BPM %s -> %s for %s signal", bpm_raw, bpm, source)
     return bpm
