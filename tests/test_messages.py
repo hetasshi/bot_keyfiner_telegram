@@ -9,6 +9,10 @@ def test_file_too_large_message() -> None:
     assert "70" in message
 
 
+def test_unsupported_file_mentions_webm() -> None:
+    assert "webm" in messages.unsupported_file().lower()
+
+
 def test_message_html_escape() -> None:
     result = AnalysisResult(
         filename="bad<&>.mp3",

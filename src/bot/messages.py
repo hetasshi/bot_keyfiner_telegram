@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 def start_message(limit_mb: int) -> str:
     return (
         "Привет! Я помогу определить тональность и темп бита.\n"
-        "Отправьте аудио-файл (mp3, wav, m4a, ogg, opus) размером до "
+        "Отправьте аудио-файл (mp3, wav, m4a, ogg, opus, webm) размером до "
         f"{limit_mb} МБ, и я пришлю тональность, темп и длительность трека."
     )
 
@@ -26,7 +26,7 @@ def file_too_large(limit_mb: int) -> str:
 def unsupported_file() -> str:
     return (
         "Не удалось определить тип файла. Поддерживаются форматы:"
-        " mp3, wav, m4a, ogg, opus."
+        " mp3, wav, m4a, ogg, opus, webm."
     )
 
 
