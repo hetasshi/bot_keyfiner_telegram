@@ -11,7 +11,14 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _TEMP_DIR = Path(tempfile.gettempdir()) / "keyfinder-bot"
-SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".opus"}
+SUPPORTED_EXTENSIONS = {
+    ".m4a",
+    ".mp3",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".webm",
+}
 DEFAULT_EXTENSION = ".bin"
 MIME_EXTENSION_MAP = {
     "audio/mpeg": ".mp3",

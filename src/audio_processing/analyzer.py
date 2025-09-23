@@ -24,7 +24,6 @@ POSITIVE_CORRELATION_THRESHOLD = 0.6
 HARMONIC_HOP_LENGTH = 512
 HARMONIC_RMS_VOID = 1e-5
 CONF_VOID = 0.05
-CONF_WEAK = 0.15
 
 
 def _env_float(name: str, default: float) -> float:
@@ -139,17 +138,26 @@ def _load_audio(audio_path: Path) -> tuple[np.ndarray, int]:
 
     try:
         y, sr = librosa.load(audio_path, sr=None, mono=True)
-    except ModuleNotFoundError as exc:
-        if getattr(exc, "name", None) != "aifc":
-            raise
-        y, sr = sf.read(audio_path, always_2d=False)
-        if isinstance(y, tuple):
-            y = y[0]
-        y = np.asarray(y)
-        if y.ndim > 1:
-            y = np.mean(y, axis=1)
-        return np.asarray(y, dtype=np.float32), int(sr)
-    return y, int(sr)
+    except Exception as first_exc:
+        logger.debug(
+            "librosa.load failed for %s (%s); trying soundfile fallback",
+            audio_path,
+            first_exc,
+        )
+        try:
+            y, sr = sf.read(audio_path, always_2d=False)
+        except Exception as sf_exc:  # pragma: no cover - delegated to caller
+            raise RuntimeError(
+                "librosa.load failed: "
+                f"{first_exc}; soundfile.read failed: {sf_exc}"
+            ) from sf_exc
+
+    if isinstance(y, tuple):
+        y = y[0]
+    y = np.asarray(y)
+    if y.ndim > 1:
+        y = np.mean(y, axis=1)
+    return np.asarray(y, dtype=np.float32), int(sr)
 
 
 def analyze_file(path: str | Path, *, want_close_key: bool = False) -> AnalysisResult:
@@ -216,10 +224,15 @@ def analyze_file(path: str | Path, *, want_close_key: bool = False) -> AnalysisR
     )
 
     logger.info(
-        "Analyzed %s: tone=%s (confidence %.2f), bpm=%s, duration=%s, A4=%.2f",
+        (
+            "Analyzed %s: tone=%s (confidence %.2f, harm_rms %.6f, no_key=%s), "
+            "bpm=%s, duration=%s, A4=%.2f"
+        ),
         audio_path.name,
         result.tone_display,
         key_info.confidence,
+        harm_rms,
+        no_key,
         bpm,
         duration,
         tuning_reference_hz,
@@ -470,7 +483,7 @@ def _adjust_bpm(bpm: int, candidates: Optional[np.ndarray]) -> int:
     if bpm < BPM_MIN and bpm * 2 <= BPM_MAX:
         adjusted = int(round(bpm * 2))
         logger.debug("Doubling BPM %s -> %s (below minimum)", bpm, adjusted)
-    elif bpm > BPM_MAX and bpm % 2 == 0 and bpm // 2 >= BPM_MIN:
+    elif bpm > BPM_MAX and (bpm / 2) >= BPM_MIN:
         adjusted = int(round(bpm / 2))
         logger.debug("Halving BPM %s -> %s (above maximum)", bpm, adjusted)
 
@@ -557,18 +570,6 @@ def format_tone_display(note: str, mode: str) -> str:
     if enharmonic:
         return f"{tone} ({enharmonic}{mode})"
     return tone
-
-
-def _safe_correlation(a: Sequence[float], b: Sequence[float]) -> float:
-    arr_a = np.asarray(a, dtype=float)
-    arr_b = np.asarray(b, dtype=float)
-    if not np.any(arr_a) or not np.any(arr_b):
-        return 0.0
-    corr_matrix = np.corrcoef(arr_a, arr_b)
-    corr = float(corr_matrix[0, 1])
-    if np.isnan(corr):
-        return 0.0
-    return corr
 
 
 __all__ = [
