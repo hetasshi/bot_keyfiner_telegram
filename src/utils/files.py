@@ -29,7 +29,9 @@ MIME_EXTENSION_MAP = {
     "audio/ogg": ".ogg",
     "audio/opus": ".opus",
     "audio/webm": ".webm",
+    "video/webm": ".webm",
     "audio/mp4": ".m4a",
+    "video/mp4": ".m4a",  # голосовые иногда приходят как video/mp4
     "audio/aac": ".m4a",
     "audio/x-m4a": ".m4a",
     "audio/3gpp": ".m4a",
