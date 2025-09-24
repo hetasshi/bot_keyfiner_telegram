@@ -23,7 +23,6 @@ CLOSE_KEY_ALT_MIN_CONF = 0.20
 POSITIVE_CORRELATION_THRESHOLD = 0.6
 HARMONIC_HOP_LENGTH = 512
 HARMONIC_RMS_VOID = 1e-5
-CONF_VOID = 0.05
 
 
 def _env_float(name: str, default: float) -> float:
@@ -46,6 +45,7 @@ def _env_int(name: str, default: int) -> int:
         raise RuntimeError(f"Invalid integer value for {name!r}: {raw!r}") from exc
 
 
+CONF_VOID = _env_float("KEYFINDER_KEY_CONF_VOID", 0.05)
 BPM_MIN = _env_int("BPM_MIN", 60)
 BPM_MAX = _env_int("BPM_MAX", 180)
 BPM_DOUBLE_SWITCH = _env_int("BPM_DOUBLE_SWITCH", 165)
