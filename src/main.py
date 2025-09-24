@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -34,7 +35,7 @@ async def _run_bot(settings: Settings) -> None:
 async def main() -> None:
     """Configure logging, load settings and run the bot."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
